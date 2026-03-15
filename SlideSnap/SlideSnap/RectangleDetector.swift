@@ -8,9 +8,11 @@ struct SlideDetector {
         var numScanLines = 15
         var colorTolerance = 25      // max channel difference for "matches background"
         var gapThreshold = 150       // max consecutive non-matching pixels before declaring edge
-        var minExtent = 50           // minimum half-size of slide in pixels
-        var scanBand = 400           // ±px band for spreading scan lines (pass 1)
+        var minExtent = 20           // minimum distance from click to declare an edge
+        var scanBand = 200           // ±px band for spreading scan lines (pass 1)
         var gradientSnapRange = 10   // ±px to search for sharpest gradient
+        var sampleRadius = 2         // neighborhood half-size for background color sampling (in steps)
+        var sampleStep = 8           // pixel spacing for background color sampling grid
     }
 
     // MARK: - Public API
@@ -28,8 +30,9 @@ struct SlideDetector {
 
         guard cx > 0, cx < buffer.width, cy > 0, cy < buffer.height else { return nil }
 
-        // Sample the background color at the click point
-        let bgColor = buffer.pixel(cx, cy)
+        // Sample a neighborhood around the click to find the dominant background color.
+        // This handles the case where the user clicks on text/content instead of bare background.
+        let bgColor = sampleBackgroundColor(buffer: buffer, cx: cx, cy: cy, config: config)
 
         // --- Pass 1: Rough edges using scan lines spread ±scanBand around click ---
 
@@ -97,6 +100,49 @@ struct SlideDetector {
         case left, right, up, down
     }
 
+    // MARK: - Background Color Sampling
+
+    /// Samples a grid of pixels around the click point and returns the dominant color.
+    /// This makes detection robust even when the user clicks on text or content
+    /// rather than bare background — the surrounding pixels are mostly background.
+    private static func sampleBackgroundColor(
+        buffer: PixelBuffer, cx: Int, cy: Int, config: Config
+    ) -> PixelBuffer.RGB {
+        let step = config.sampleStep
+        let radius = config.sampleRadius
+        let tol = config.colorTolerance
+        var samples: [PixelBuffer.RGB] = []
+
+        for dy in -radius...radius {
+            for dx in -radius...radius {
+                let sx = clamp(cx + dx * step, 0, buffer.width - 1)
+                let sy = clamp(cy + dy * step, 0, buffer.height - 1)
+                samples.append(buffer.pixel(sx, sy))
+            }
+        }
+
+        // Find the sample whose color has the most matches among all samples
+        var bestIndex = 0
+        var bestCount = 0
+
+        for i in 0..<samples.count {
+            var count = 0
+            for j in 0..<samples.count {
+                if abs(samples[i].r - samples[j].r) <= tol &&
+                   abs(samples[i].g - samples[j].g) <= tol &&
+                   abs(samples[i].b - samples[j].b) <= tol {
+                    count += 1
+                }
+            }
+            if count > bestCount {
+                bestCount = count
+                bestIndex = i
+            }
+        }
+
+        return samples[bestIndex]
+    }
+
     // MARK: - Edge Detection (multi-line consensus with median)
 
     /// Scans outward from (cx, cy) in the given direction using multiple parallel scan lines
@@ -141,8 +187,8 @@ struct SlideDetector {
             }
         }
 
-        // Need at least half the scan lines to agree
-        guard candidates.count >= n / 2 else { return nil }
+        // Need at least a third of scan lines to agree (allows smaller slides)
+        guard candidates.count >= max(3, n / 3) else { return nil }
 
         candidates.sort()
         return candidates[candidates.count / 2]  // median
