@@ -7,7 +7,6 @@ struct SlideDetector {
     struct Config {
         var numScanLines = 15
         var colorTolerance = 25      // max channel difference for "matches background"
-        var gapThreshold = 150       // max consecutive non-matching pixels before declaring edge
         var minExtent = 20           // minimum distance from click to declare an edge
         var scanBand = 200           // ±px band for spreading scan lines (pass 1)
         var gradientSnapRange = 10   // ±px to search for sharpest gradient
@@ -34,16 +33,16 @@ struct SlideDetector {
         // This handles the case where the user clicks on text/content instead of bare background.
         let bgColor = sampleBackgroundColor(buffer: buffer, cx: cx, cy: cy, config: config)
 
-        // --- Pass 1: Rough edges using scan lines spread ±scanBand around click ---
+        // --- Pass 1: Rough edges (generous edgeConfirm to bridge over text) ---
 
         let roughLeft  = findEdge(buffer: buffer, cx: cx, cy: cy, bgColor: bgColor,
-                                  direction: .left, orthogonalExtent: config.scanBand, config: config)
+                                  direction: .left, orthogonalExtent: config.scanBand, edgeConfirm: 20, config: config)
         let roughRight = findEdge(buffer: buffer, cx: cx, cy: cy, bgColor: bgColor,
-                                  direction: .right, orthogonalExtent: config.scanBand, config: config)
+                                  direction: .right, orthogonalExtent: config.scanBand, edgeConfirm: 20, config: config)
         let roughTop   = findEdge(buffer: buffer, cx: cx, cy: cy, bgColor: bgColor,
-                                  direction: .up, orthogonalExtent: config.scanBand, config: config)
+                                  direction: .up, orthogonalExtent: config.scanBand, edgeConfirm: 20, config: config)
         let roughBottom = findEdge(buffer: buffer, cx: cx, cy: cy, bgColor: bgColor,
-                                   direction: .down, orthogonalExtent: config.scanBand, config: config)
+                                   direction: .down, orthogonalExtent: config.scanBand, edgeConfirm: 20, config: config)
 
         print("[SlideSnap] Click pixel: (\(cx), \(cy)) in \(buffer.width)x\(buffer.height) image, bg=(\(bgColor.r),\(bgColor.g),\(bgColor.b))")
         print("[SlideSnap] Rough edges: L=\(roughLeft as Any) R=\(roughRight as Any) T=\(roughTop as Any) B=\(roughBottom as Any)")
@@ -54,30 +53,31 @@ struct SlideDetector {
             return nil
         }
 
-        // --- Pass 2: Refine using the rough rect's full orthogonal extent ---
+        // --- Pass 2: Refine with margin probes (edgeConfirm=2 detects separators) ---
 
         let verticalExtent   = (rB - rT) / 2
         let horizontalExtent = (rR - rL) / 2
 
         let left   = findEdge(buffer: buffer, cx: cx, cy: cy, bgColor: bgColor,
-                              direction: .left, orthogonalExtent: verticalExtent, config: config) ?? rL
+                              direction: .left, orthogonalExtent: verticalExtent, edgeConfirm: 2, config: config) ?? rL
         let right  = findEdge(buffer: buffer, cx: cx, cy: cy, bgColor: bgColor,
-                              direction: .right, orthogonalExtent: verticalExtent, config: config) ?? rR
+                              direction: .right, orthogonalExtent: verticalExtent, edgeConfirm: 2, config: config) ?? rR
         let top    = findEdge(buffer: buffer, cx: cx, cy: cy, bgColor: bgColor,
-                              direction: .up, orthogonalExtent: horizontalExtent, config: config) ?? rT
+                              direction: .up, orthogonalExtent: horizontalExtent, edgeConfirm: 2, config: config) ?? rT
         let bottom = findEdge(buffer: buffer, cx: cx, cy: cy, bgColor: bgColor,
-                              direction: .down, orthogonalExtent: horizontalExtent, config: config) ?? rB
+                              direction: .down, orthogonalExtent: horizontalExtent, edgeConfirm: 2, config: config) ?? rB
 
-        // --- Pass 3: Gradient snap — find sharpest transition near each edge ---
+        // --- Pass 3: Boundary snap — search inward from each edge for the strongest
+        //     gradient that has bgColor on its inside, correcting any overshoot ---
 
-        let snapLeft   = snapToGradient(buffer: buffer, edge: left, fixed: cy,
-                                        direction: .left, range: config.gradientSnapRange)
-        let snapRight  = snapToGradient(buffer: buffer, edge: right, fixed: cy,
-                                        direction: .right, range: config.gradientSnapRange)
-        let snapTop    = snapToGradient(buffer: buffer, edge: top, fixed: cx,
-                                        direction: .up, range: config.gradientSnapRange)
-        let snapBottom = snapToGradient(buffer: buffer, edge: bottom, fixed: cx,
-                                        direction: .down, range: config.gradientSnapRange)
+        let snapLeft   = snapToBoundary(buffer: buffer, edge: left, fixed: cy,
+                                        direction: .left, bgColor: bgColor, config: config)
+        let snapRight  = snapToBoundary(buffer: buffer, edge: right, fixed: cy,
+                                        direction: .right, bgColor: bgColor, config: config)
+        let snapTop    = snapToBoundary(buffer: buffer, edge: top, fixed: cx,
+                                        direction: .up, bgColor: bgColor, config: config)
+        let snapBottom = snapToBoundary(buffer: buffer, edge: bottom, fixed: cx,
+                                        direction: .down, bgColor: bgColor, config: config)
 
         let finalRect = CGRect(
             x: CGFloat(snapLeft),
@@ -143,186 +143,224 @@ struct SlideDetector {
         return samples[bestIndex]
     }
 
-    // MARK: - Edge Detection (multi-line consensus with median)
+    // MARK: - Edge Detection (cross-validated consensus)
 
-    /// Scans outward from (cx, cy) in the given direction using multiple parallel scan lines
-    /// spread across the orthogonal axis. Returns the median edge position.
+    /// Sweeps outward from (cx, cy) one position at a time, checking ALL scan lines
+    /// at each position. Declares the edge when the background color disappears from
+    /// all scan lines simultaneously (indicating a separator or real slide boundary).
+    ///
+    /// This approach naturally bridges over images and content (which only block SOME
+    /// scan lines) while stopping at separators (which block ALL scan lines).
     private static func findEdge(
         buffer: PixelBuffer,
         cx: Int, cy: Int,
         bgColor: PixelBuffer.RGB,
         direction: ScanDirection,
         orthogonalExtent: Int,
+        edgeConfirm: Int,
         config: Config
     ) -> Int? {
         let n = config.numScanLines
-        var candidates: [Int] = []
+        let tol = config.colorTolerance
+        let minMatchCount = 1  // at least 1 scan line must see bg to be "inside slide"
 
+        // Compute orthogonal scan line positions (evenly spread)
+        var scanPositions: [Int] = []
         for i in 0..<n {
-            // Spread scan lines evenly across ±orthogonalExtent
             let offset = -orthogonalExtent + (2 * orthogonalExtent * i) / max(n - 1, 1)
-
-            let edgePos: Int?
             switch direction {
-            case .left:
-                let scanY = clamp(cy + offset, 0, buffer.height - 1)
-                edgePos = scanForColorEdge(buffer: buffer, startX: cx, y: scanY,
-                                           dx: -1, bgColor: bgColor, config: config)
-            case .right:
-                let scanY = clamp(cy + offset, 0, buffer.height - 1)
-                edgePos = scanForColorEdge(buffer: buffer, startX: cx, y: scanY,
-                                           dx: 1, bgColor: bgColor, config: config)
-            case .up:
-                let scanX = clamp(cx + offset, 0, buffer.width - 1)
-                edgePos = scanForColorEdge(buffer: buffer, x: scanX, startY: cy,
-                                           dy: -1, bgColor: bgColor, config: config)
-            case .down:
-                let scanX = clamp(cx + offset, 0, buffer.width - 1)
-                edgePos = scanForColorEdge(buffer: buffer, x: scanX, startY: cy,
-                                           dy: 1, bgColor: bgColor, config: config)
-            }
-
-            if let pos = edgePos {
-                candidates.append(pos)
+            case .left, .right:
+                scanPositions.append(clamp(cy + offset, 0, buffer.height - 1))
+            case .up, .down:
+                scanPositions.append(clamp(cx + offset, 0, buffer.width - 1))
             }
         }
 
-        // Need at least a third of scan lines to agree (allows smaller slides)
-        guard candidates.count >= max(3, n / 3) else { return nil }
+        // Add margin probe lines near the edges of the orthogonal extent.
+        // These ensure bg is detected at the slide margins even when text/content
+        // spans most (but not all) of the slide width — distinguishing content from separators.
+        let marginInset = 15
+        switch direction {
+        case .left, .right:
+            scanPositions.append(clamp(cy - orthogonalExtent + marginInset, 0, buffer.height - 1))
+            scanPositions.append(clamp(cy + orthogonalExtent - marginInset, 0, buffer.height - 1))
+        case .up, .down:
+            scanPositions.append(clamp(cx - orthogonalExtent + marginInset, 0, buffer.width - 1))
+            scanPositions.append(clamp(cx + orthogonalExtent - marginInset, 0, buffer.width - 1))
+        }
 
-        candidates.sort()
-        return candidates[candidates.count / 2]  // median
-    }
+        // Determine scan parameters
+        let start: Int
+        let step: Int
+        let limit: Int
+        switch direction {
+        case .left:  start = cx; step = -1; limit = 0
+        case .right: start = cx; step = 1;  limit = buffer.width - 1
+        case .up:    start = cy; step = -1; limit = 0
+        case .down:  start = cy; step = 1;  limit = buffer.height - 1
+        }
 
-    // MARK: - Horizontal color edge scan
+        var lastGoodPos = start
+        var consecutiveLow = 0
+        var pos = start
 
-    /// Scans horizontally from (startX, y) in direction dx (±1).
-    /// Tracks the last position where the background color was seen.
-    /// Returns that position once `gapThreshold` consecutive non-matching pixels are encountered.
-    private static func scanForColorEdge(
-        buffer: PixelBuffer,
-        startX: Int, y: Int,
-        dx: Int,
-        bgColor: PixelBuffer.RGB,
-        config: Config
-    ) -> Int? {
-        let tol = config.colorTolerance
-        var lastMatchX = startX
-        var gap = 0
-        var x = startX
-
-        while x >= 0 && x < buffer.width {
-            let p = buffer.pixel(x, y)
-            if abs(p.r - bgColor.r) <= tol &&
-               abs(p.g - bgColor.g) <= tol &&
-               abs(p.b - bgColor.b) <= tol {
-                lastMatchX = x
-                gap = 0
-            } else {
-                gap += 1
-                if gap >= config.gapThreshold {
-                    // Only accept if we've moved at least minExtent from click
-                    if abs(lastMatchX - startX) >= config.minExtent {
-                        return lastMatchX
-                    }
-                    return nil
+        while (step > 0 && pos <= limit) || (step < 0 && pos >= limit) {
+            // Count how many scan lines see bgColor at this position
+            var matchCount = 0
+            for orthoPos in scanPositions {
+                let p: PixelBuffer.RGB
+                switch direction {
+                case .left, .right: p = buffer.pixel(pos, orthoPos)
+                case .up, .down:    p = buffer.pixel(orthoPos, pos)
+                }
+                if abs(p.r - bgColor.r) <= tol &&
+                   abs(p.g - bgColor.g) <= tol &&
+                   abs(p.b - bgColor.b) <= tol {
+                    matchCount += 1
                 }
             }
-            x += dx
+
+            if matchCount >= minMatchCount {
+                // Background visible on at least one scan line → still inside slide
+                lastGoodPos = pos
+                consecutiveLow = 0
+            } else {
+                // No scan lines see background → separator or edge
+                consecutiveLow += 1
+                if consecutiveLow >= edgeConfirm {
+                    break
+                }
+            }
+
+            pos += step
         }
 
-        // Reached image boundary — use last match if far enough from click
-        if abs(lastMatchX - startX) >= config.minExtent {
-            return lastMatchX
+        // Check minimum extent from click
+        if abs(lastGoodPos - start) >= config.minExtent {
+            return lastGoodPos
         }
         return nil
     }
 
-    // MARK: - Vertical color edge scan
+    // MARK: - Boundary Snap
 
-    /// Scans vertically from (x, startY) in direction dy (±1).
-    /// Tracks the last position where the background color was seen.
-    /// Returns that position once `gapThreshold` consecutive non-matching pixels are encountered.
-    private static func scanForColorEdge(
-        buffer: PixelBuffer,
-        x: Int, startY: Int,
-        dy: Int,
-        bgColor: PixelBuffer.RGB,
-        config: Config
-    ) -> Int? {
-        let tol = config.colorTolerance
-        var lastMatchY = startY
-        var gap = 0
-        var y = startY
-
-        while y >= 0 && y < buffer.height {
-            let p = buffer.pixel(x, y)
-            if abs(p.r - bgColor.r) <= tol &&
-               abs(p.g - bgColor.g) <= tol &&
-               abs(p.b - bgColor.b) <= tol {
-                lastMatchY = y
-                gap = 0
-            } else {
-                gap += 1
-                if gap >= config.gapThreshold {
-                    if abs(lastMatchY - startY) >= config.minExtent {
-                        return lastMatchY
-                    }
-                    return nil
-                }
-            }
-            y += dy
-        }
-
-        if abs(lastMatchY - startY) >= config.minExtent {
-            return lastMatchY
-        }
-        return nil
-    }
-
-    // MARK: - Gradient Snap
-
-    /// Walks ±range pixels around `edge` and snaps to the position with the sharpest
-    /// color gradient (largest difference between adjacent pixels).
-    private static func snapToGradient(
+    /// Searches from the detected edge inward (toward the click point) for a gradient
+    /// that marks the actual slide boundary. Validates candidates by checking that
+    /// the background color is dense on the inward side of the gradient.
+    /// Falls back to simple strongest-gradient if no validated candidate is found.
+    private static func snapToBoundary(
         buffer: PixelBuffer,
         edge: Int,
         fixed: Int,
         direction: ScanDirection,
-        range: Int
+        bgColor: PixelBuffer.RGB,
+        config: Config
     ) -> Int {
-        var bestPos = edge
-        var bestGrad = 0
+        let outwardRange = config.gradientSnapRange   // 10px outward (fine-tune)
+        let inwardRange = 80                          // 80px inward (correct overshoot)
+        let tol = config.colorTolerance
+        let densityWindow = 20                        // check bgColor in 20px past gradient
+        let minGrad = 30                              // minimum gradient to consider
 
-        let lo = edge - range
-        let hi = edge + range
+        var bestPos = edge
+        var bestScore: Double = 0
+        // Fallback: strongest gradient regardless of bgColor check
+        var fallbackPos = edge
+        var fallbackGrad = 0
 
         switch direction {
         case .left, .right:
             let y = clamp(fixed, 0, buffer.height - 1)
+            // "inward" = toward click = opposite of scan direction
+            let inwardDx = (direction == .left) ? 1 : -1
+            let lo = min(edge - inwardDx * outwardRange, edge + inwardDx * inwardRange)
+            let hi = max(edge - inwardDx * outwardRange, edge + inwardDx * inwardRange)
+
             for x in max(1, lo)...min(buffer.width - 1, hi) {
                 let a = buffer.pixel(x - 1, y)
                 let b = buffer.pixel(x, y)
                 let grad = abs(a.r - b.r) + abs(a.g - b.g) + abs(a.b - b.b)
-                if grad > bestGrad {
-                    bestGrad = grad
+
+                if grad > fallbackGrad {
+                    fallbackGrad = grad
+                    fallbackPos = x
+                }
+
+                guard grad >= minGrad else { continue }
+
+                // Check bgColor density on the inward side
+                let insidePixel = (direction == .left) ? b : a
+                guard abs(insidePixel.r - bgColor.r) <= tol &&
+                      abs(insidePixel.g - bgColor.g) <= tol &&
+                      abs(insidePixel.b - bgColor.b) <= tol else { continue }
+
+                // Validate: bgColor should be dense for the next densityWindow pixels inward
+                var matchCount = 0
+                for d in 1...densityWindow {
+                    let vx = x + inwardDx * d
+                    guard vx >= 0, vx < buffer.width else { break }
+                    let p = buffer.pixel(vx, y)
+                    if abs(p.r - bgColor.r) <= tol &&
+                       abs(p.g - bgColor.g) <= tol &&
+                       abs(p.b - bgColor.b) <= tol {
+                        matchCount += 1
+                    }
+                }
+
+                let density = Double(matchCount) / Double(densityWindow)
+                let score = Double(grad) * density
+                if score > bestScore {
+                    bestScore = score
                     bestPos = x
                 }
             }
+
         case .up, .down:
             let x = clamp(fixed, 0, buffer.width - 1)
+            let inwardDy = (direction == .up) ? 1 : -1
+            let lo = min(edge - inwardDy * outwardRange, edge + inwardDy * inwardRange)
+            let hi = max(edge - inwardDy * outwardRange, edge + inwardDy * inwardRange)
+
             for y in max(1, lo)...min(buffer.height - 1, hi) {
                 let a = buffer.pixel(x, y - 1)
                 let b = buffer.pixel(x, y)
                 let grad = abs(a.r - b.r) + abs(a.g - b.g) + abs(a.b - b.b)
-                if grad > bestGrad {
-                    bestGrad = grad
+
+                if grad > fallbackGrad {
+                    fallbackGrad = grad
+                    fallbackPos = y
+                }
+
+                guard grad >= minGrad else { continue }
+
+                let insidePixel = (direction == .up) ? b : a
+                guard abs(insidePixel.r - bgColor.r) <= tol &&
+                      abs(insidePixel.g - bgColor.g) <= tol &&
+                      abs(insidePixel.b - bgColor.b) <= tol else { continue }
+
+                var matchCount = 0
+                for d in 1...densityWindow {
+                    let vy = y + inwardDy * d
+                    guard vy >= 0, vy < buffer.height else { break }
+                    let p = buffer.pixel(x, vy)
+                    if abs(p.r - bgColor.r) <= tol &&
+                       abs(p.g - bgColor.g) <= tol &&
+                       abs(p.b - bgColor.b) <= tol {
+                        matchCount += 1
+                    }
+                }
+
+                let density = Double(matchCount) / Double(densityWindow)
+                let score = Double(grad) * density
+                if score > bestScore {
+                    bestScore = score
                     bestPos = y
                 }
             }
         }
 
-        return bestPos
+        // Use validated boundary if found, otherwise fall back to strongest gradient
+        return bestScore > 0 ? bestPos : fallbackPos
     }
 
     // MARK: - Helpers
