@@ -13,6 +13,7 @@ struct ScreenCaptureService {
             let config = SCStreamConfiguration()
             config.width = display.width * 2
             config.height = display.height * 2
+            config.showsCursor = false
 
             return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         } catch {
