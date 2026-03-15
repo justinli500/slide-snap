@@ -16,6 +16,9 @@ final class OverlayWindow: NSWindow {
     ) {
         guard let screen = NSScreen.main else { return }
 
+        // Remember which app was active so we can restore focus after closing
+        let previousApp = NSWorkspace.shared.frontmostApplication
+
         let window = OverlayWindow(
             contentRect: screen.frame,
             styleMask: [.borderless],
@@ -33,10 +36,12 @@ final class OverlayWindow: NSWindow {
             frame: screen.frame,
             screenshot: screenshot,
             onSelect: { pixelRect in
+                previousApp?.activate()
                 window.close()
                 onSelect(pixelRect)
             },
             onCancel: {
+                previousApp?.activate()
                 window.close()
                 onCancel()
             }
