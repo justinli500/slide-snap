@@ -11,16 +11,17 @@
         <ul>
           <li>SlideSnap now launches automatically at login</li>
           <li>Added "Check for Updates" menu item with automatic update support</li>
+          <li>Shows helpful alert when Screen Recording permission is missing</li>
         </ul>
       ]]></description>
       <pubDate>Sat, 15 Mar 2026 21:10:00 -0400</pubDate>
-      <sparkle:version>2</sparkle:version>
+      <sparkle:version>3</sparkle:version>
       <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <enclosure
         url="https://github.com/justinli500/slide-snap/releases/download/v1.0.1/SlideSnap-v1.0.1.zip"
-        sparkle:edSignature="bXQ7py2CZBrQu2NCVDF0tWD8Q63LnjDL6J8f1j8xio+sDvvkLoi7/wbkU5zj2UEEe4j0GOQ3eRBp3ywjSQG1CA=="
-        length="3032177"
+        sparkle:edSignature="Bbwm5O5Vv4EKC7Fm5k+K44uqVEQOvVM2Rdub0syEjd4pEzvvo5U0GHGDlKsTWTalZQ7dCGci57oUADXJ4Il1Cw=="
+        length="3033319"
         type="application/octet-stream" />
     </item>
     <item>
