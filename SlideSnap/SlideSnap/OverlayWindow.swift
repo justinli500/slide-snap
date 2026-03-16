@@ -6,12 +6,11 @@ final class OverlayWindow: NSWindow {
 
     override var canBecomeKey: Bool { true }
 
-    /// Shows a full-screen dimmed overlay of the screenshot.
-    /// User clicks inside a slide to auto-detect its boundaries, or drags to select manually.
-    /// Press Esc to cancel.
+    /// Shows a full-screen dimmed overlay immediately, then loads the screenshot
+    /// in the background. User clicks inside a slide to auto-detect its boundaries,
+    /// or drags to select manually. Press Esc to cancel.
     static func show(
-        screenshot: CGImage,
-        onSelect: @escaping (CGRect) -> Void,
+        onSelect: @escaping (CGRect, CGImage) -> Void,
         onCancel: @escaping () -> Void
     ) {
         guard let screen = NSScreen.main else { return }
@@ -31,14 +30,15 @@ final class OverlayWindow: NSWindow {
         window.backgroundColor = .clear
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.ignoresMouseEvents = false
+        // Exclude this window from screen captures so the screenshot doesn't include the dim
+        window.sharingType = .none
 
         let overlayView = OverlayView(
             frame: screen.frame,
-            screenshot: screenshot,
-            onSelect: { pixelRect in
+            onSelect: { pixelRect, screenshot in
                 previousApp?.activate()
                 window.close()
-                onSelect(pixelRect)
+                onSelect(pixelRect, screenshot)
             },
             onCancel: {
                 previousApp?.activate()
@@ -50,6 +50,16 @@ final class OverlayWindow: NSWindow {
         window.contentView = overlayView
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Capture the screenshot in the background — the overlay is already visible
+        Task {
+            guard let screenshot = await ScreenCaptureService.captureMainDisplay() else {
+                previousApp?.activate()
+                window.close()
+                return
+            }
+            overlayView.setScreenshot(screenshot)
+        }
     }
 }
 
@@ -57,12 +67,11 @@ final class OverlayWindow: NSWindow {
 
 private final class OverlayView: NSView {
 
-    private let screenshot: CGImage
-    private let onSelect: (CGRect) -> Void
+    private var screenshot: CGImage?
+    private let onSelect: (CGRect, CGImage) -> Void
     private let onCancel: () -> Void
 
     // Scale computed from actual screenshot dimensions vs view size.
-    // This avoids assumptions about backingScaleFactor vs SCDisplay dimensions.
     private var imageScaleX: CGFloat = 1
     private var imageScaleY: CGFloat = 1
 
@@ -76,23 +85,13 @@ private final class OverlayView: NSView {
 
     init(
         frame: NSRect,
-        screenshot: CGImage,
-        onSelect: @escaping (CGRect) -> Void,
+        onSelect: @escaping (CGRect, CGImage) -> Void,
         onCancel: @escaping () -> Void
     ) {
-        self.screenshot = screenshot
         self.onSelect = onSelect
         self.onCancel = onCancel
 
         super.init(frame: frame)
-
-        // Compute actual scale from screenshot pixel dimensions vs view point dimensions.
-        // This is more reliable than using backingScaleFactor, which may not match
-        // the SCStreamConfiguration's capture resolution.
-        imageScaleX = CGFloat(screenshot.width) / frame.width
-        imageScaleY = CGFloat(screenshot.height) / frame.height
-
-        print("[SlideSnap] View: \(frame.width)x\(frame.height), Screenshot: \(screenshot.width)x\(screenshot.height), Scale: \(imageScaleX)x\(imageScaleY)")
 
         let trackingArea = NSTrackingArea(
             rect: frame,
@@ -104,6 +103,15 @@ private final class OverlayView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Called when the screenshot is ready. Updates the view to show the captured screen.
+    func setScreenshot(_ image: CGImage) {
+        self.screenshot = image
+        imageScaleX = CGFloat(image.width) / bounds.width
+        imageScaleY = CGFloat(image.height) / bounds.height
+        print("[SlideSnap] Screenshot loaded: \(image.width)x\(image.height), Scale: \(imageScaleX)x\(imageScaleY)")
+        needsDisplay = true
+    }
 
     // MARK: Coordinate Conversion
 
@@ -142,15 +150,17 @@ private final class OverlayView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
-        // 1. Draw the full-screen screenshot as background
-        ctx.draw(screenshot, in: bounds)
+        // 1. Draw the screenshot as background (if loaded), otherwise transparent
+        if let screenshot = screenshot {
+            ctx.draw(screenshot, in: bounds)
+        }
 
-        // 2. Draw dimmed overlay
+        // 2. Draw dimmed overlay (always — gives instant visual feedback)
         NSColor.black.withAlphaComponent(0.4).setFill()
         bounds.fill()
 
         // 3. Draw drag selection rectangle if dragging
-        if let start = dragStart, let current = dragCurrent, isDragging {
+        if let screenshot = screenshot, let start = dragStart, let current = dragCurrent, isDragging {
             let selectionRect = rectFromPoints(start, current)
 
             // Cut through dim for the selection area
@@ -168,7 +178,7 @@ private final class OverlayView: NSView {
         }
 
         // 4. Draw detected slide highlight (green flash)
-        if let viewRect = detectedViewRect {
+        if let screenshot = screenshot, let viewRect = detectedViewRect {
             ctx.saveGState()
             ctx.clip(to: [viewRect])
             ctx.draw(screenshot, in: bounds)
@@ -200,6 +210,7 @@ private final class OverlayView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard screenshot != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
         dragCurrent = point
 
@@ -216,6 +227,7 @@ private final class OverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard let screenshot = screenshot else { return }
         let point = convert(event.locationInWindow, from: nil)
 
         if isDragging, let start = dragStart {
@@ -227,7 +239,7 @@ private final class OverlayView: NSView {
             }
             let pixelRect = viewRectToPixelRect(selectionRect)
             print("[SlideSnap] Manual select: view=\(selectionRect) → pixel=\(pixelRect)")
-            onSelect(pixelRect)
+            onSelect(pixelRect, screenshot)
         } else {
             // Click-to-detect: run SlideDetector from click point
             let pixelPoint = viewPointToPixelPoint(point)
@@ -239,8 +251,9 @@ private final class OverlayView: NSView {
                 needsDisplay = true
 
                 let capturedRect = detected
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                    self?.onSelect(capturedRect)
+                let img = screenshot
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.onSelect(capturedRect, img)
                 }
             } else {
                 print("[SlideSnap] No slide detected at click point — try again")

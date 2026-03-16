@@ -77,27 +77,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Capture flow
 
     func triggerCapture() {
-        Task {
-            print("[SlideSnap] Starting capture...")
+        print("[SlideSnap] Starting capture...")
 
-            guard let screenshot = await ScreenCaptureService.captureMainDisplay() else {
-                print("[SlideSnap] Screen capture failed — check Screen Recording permission")
-                return
+        // Overlay shows the dim immediately; screenshot loads in the background
+        OverlayWindow.show(
+            onSelect: { selectedRect, screenshot in
+                print("[SlideSnap] Slide selected: \(selectedRect)")
+                CaptureStorage.saveCapture(from: screenshot, rect: selectedRect)
+            },
+            onCancel: {
+                print("[SlideSnap] Cancelled")
             }
-            print("[SlideSnap] Screenshot captured: \(screenshot.width)x\(screenshot.height)")
-
-            // Show overlay immediately — no pre-detection step
-            print("[SlideSnap] Showing overlay...")
-            OverlayWindow.show(
-                screenshot: screenshot,
-                onSelect: { selectedRect in
-                    print("[SlideSnap] Slide selected: \(selectedRect)")
-                    CaptureStorage.saveCapture(from: screenshot, rect: selectedRect)
-                },
-                onCancel: {
-                    print("[SlideSnap] Cancelled")
-                }
-            )
-        }
+        )
     }
 }
