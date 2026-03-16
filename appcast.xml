@@ -5,6 +5,25 @@
     <link>https://github.com/justinli500/slide-snap</link>
     <description>SlideSnap update feed</description>
     <item>
+      <title>Version 1.0.1</title>
+      <description><![CDATA[
+        <h2>SlideSnap v1.0.1</h2>
+        <ul>
+          <li>SlideSnap now launches automatically at login</li>
+          <li>Added "Check for Updates" menu item with automatic update support</li>
+        </ul>
+      ]]></description>
+      <pubDate>Sat, 15 Mar 2026 21:10:00 -0400</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure
+        url="https://github.com/justinli500/slide-snap/releases/download/v1.0.1/SlideSnap-v1.0.1.zip"
+        sparkle:edSignature="bXQ7py2CZBrQu2NCVDF0tWD8Q63LnjDL6J8f1j8xio+sDvvkLoi7/wbkU5zj2UEEe4j0GOQ3eRBp3ywjSQG1CA=="
+        length="3032177"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.0</title>
       <description><![CDATA[
         <h2>SlideSnap v1.0</h2>
