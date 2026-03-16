@@ -1,0 +1,29 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>SlideSnap</title>
+    <link>https://github.com/justinli500/slide-snap</link>
+    <description>SlideSnap update feed</description>
+    <item>
+      <title>Version 1.0</title>
+      <description><![CDATA[
+        <h2>SlideSnap v1.0</h2>
+        <ul>
+          <li>Click on a slide's background color to auto-detect and capture it</li>
+          <li>Drag-to-select fallback for manual cropping</li>
+          <li>Copies to clipboard (Universal Clipboard compatible)</li>
+          <li>Saves to ~/Documents/SlideSnap/</li>
+        </ul>
+      ]]></description>
+      <pubDate>Sat, 15 Mar 2026 20:54:00 -0400</pubDate>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure
+        url="https://github.com/justinli500/slide-snap/releases/download/v1.0.0/SlideSnap-v1.0.0.zip"
+        sparkle:edSignature="V9B2AokGL8edyqRGLBO2Cq+4P6lelMojLyibX8dZcOQW0NIY6nUJXZS5DS4aSRrtPrzIxCVCYnLHVrDJQgHmDw=="
+        length="3031789"
+        type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

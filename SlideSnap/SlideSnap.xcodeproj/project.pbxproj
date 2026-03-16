@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		52201CF22F678BA00068722A /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 52201CF12F678BA00068722A /* Sparkle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		52201CD22F6621050068722A /* SlideSnap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SlideSnap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				52201CF22F678BA00068722A /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 			);
 			name = SlideSnap;
 			packageProductDependencies = (
+				52201CF12F678BA00068722A /* Sparkle */,
 			);
 			productName = SlideSnap;
 			productReference = 52201CD22F6621050068722A /* SlideSnap.app */;
@@ -107,6 +113,9 @@
 			);
 			mainGroup = 52201CC92F6621050068722A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				52201CF02F678BA00068722A /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 52201CD32F6621050068722A /* Products */;
 			projectDirPath = "";
@@ -346,6 +355,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		52201CF02F678BA00068722A /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		52201CF12F678BA00068722A /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 52201CF02F678BA00068722A /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 52201CCA2F6621050068722A /* Project object */;
 }

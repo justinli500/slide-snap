@@ -4,5 +4,9 @@
 <dict>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>SlideSnap needs screen recording access to capture slides</string>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/justinli500/slide-snap/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>J2+NJZ/fYyKdzIbHmolm4P7x6tfhofQCFgFOzAESIyU=</string>
 </dict>
 </plist>

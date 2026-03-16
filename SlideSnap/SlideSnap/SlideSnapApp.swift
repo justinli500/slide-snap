@@ -1,5 +1,6 @@
 import Carbon
 import Cocoa
+import Sparkle
 import SwiftUI
 
 @main
@@ -16,6 +17,7 @@ struct SlideSnapApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var hotKeyRef: EventHotKeyRef?
+    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -34,6 +36,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Capture Slide  ⌘⇧2", action: #selector(captureSlideAction), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Captures Folder", action: #selector(openCapturesFolderAction), keyEquivalent: ""))
+        menu.addItem(.separator())
+        let checkForUpdatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+        checkForUpdatesItem.target = updaterController
+        menu.addItem(checkForUpdatesItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitAction), keyEquivalent: "q"))
         statusItem.menu = menu
