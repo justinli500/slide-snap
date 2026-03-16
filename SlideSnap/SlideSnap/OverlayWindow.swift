@@ -56,6 +56,16 @@ final class OverlayWindow: NSWindow {
             guard let screenshot = await ScreenCaptureService.captureMainDisplay() else {
                 previousApp?.activate()
                 window.close()
+
+                let alert = NSAlert()
+                alert.messageText = "Screen Recording Permission Required"
+                alert.informativeText = "SlideSnap needs Screen Recording access to capture slides.\n\nGo to System Settings → Privacy & Security → Screen Recording and enable SlideSnap."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Open System Settings")
+                alert.addButton(withTitle: "Cancel")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                }
                 return
             }
             overlayView.setScreenshot(screenshot)
