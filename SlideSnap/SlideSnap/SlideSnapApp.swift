@@ -1,3 +1,4 @@
+import Carbon
 import Cocoa
 import SwiftUI
 
@@ -14,12 +15,11 @@ struct SlideSnapApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+    private var hotKeyRef: EventHotKeyRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
-        setupHotkeyMonitors()
+        setupHotkey()
     }
 
     // MARK: Menu Bar
@@ -51,27 +51,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
-    // MARK: Hotkey
+    // MARK: Hotkey (Carbon — consumes the event system-wide, no alert beep)
 
-    private func setupHotkeyMonitors() {
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleHotkey(event)
-        }
+    private func setupHotkey() {
+        // Install a handler for hot key events
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleHotkey(event)
-            return event
-        }
-    }
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, _, userData -> OSStatus in
+                guard let userData else { return OSStatus(eventNotHandledErr) }
+                let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
+                print("[SlideSnap] Hotkey triggered!")
+                delegate.triggerCapture()
+                return noErr
+            },
+            1, &eventType, selfPtr, nil
+        )
 
-    private func handleHotkey(_ event: NSEvent) {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard event.keyCode == 19,
-              flags.contains([.command, .shift])
-        else { return }
-
-        print("[SlideSnap] Hotkey triggered!")
-        triggerCapture()
+        // Register ⌘⇧2 as a global hotkey
+        let hotKeyID = EventHotKeyID(signature: OSType(0x534E4150), id: UInt32(1))
+        RegisterEventHotKey(
+            UInt32(kVK_ANSI_2),
+            UInt32(cmdKey | shiftKey),
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
     }
 
     // MARK: Capture flow
