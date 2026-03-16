@@ -1,5 +1,6 @@
 import Carbon
 import Cocoa
+import ServiceManagement
 import Sparkle
 import SwiftUI
 
@@ -22,6 +23,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
         setupHotkey()
+
+        // Launch at login
+        try? SMAppService.mainApp.register()
     }
 
     // MARK: Menu Bar
