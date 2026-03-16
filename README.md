@@ -17,8 +17,8 @@ Press **Esc** to cancel at any time.
 
 ### Download (recommended)
 
-1. Go to [Releases](../../releases) and download the latest `.zip`
-2. Unzip and drag **SlideSnap.app** to your Applications folder
+1. Go to [Releases](../../releases) and download **SlideSnap-Installer.dmg**
+2. Open the DMG and drag **SlideSnap** to Applications
 3. On first launch, right-click the app → **Open** (required since the app isn't notarized)
 4. Grant **Screen Recording** permission when prompted (System Settings → Privacy & Security → Screen Recording)
 
