@@ -5,6 +5,24 @@
     <link>https://github.com/justinli500/slide-snap</link>
     <description>SlideSnap update feed</description>
     <item>
+      <title>Version 1.0.2</title>
+      <description><![CDATA[
+        <h2>SlideSnap v1.0.2</h2>
+        <ul>
+          <li>Fixed compatibility — now runs on macOS 14 (Sonoma) and later</li>
+        </ul>
+      ]]></description>
+      <pubDate>Mon, 17 Mar 2026 14:10:00 -0400</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure
+        url="https://github.com/justinli500/slide-snap/releases/download/v1.0.2/SlideSnap-v1.0.2.zip"
+        sparkle:edSignature="QuecQz4UiZZPtq/KfAm1lsNjtAvFrzQCcDCuffv3Tqvb1UcjXUvmBBt0Nq7K73RslyY6IeAABofcps+O5UceBg=="
+        length="3033303"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.0.1</title>
       <description><![CDATA[
         <h2>SlideSnap v1.0.1</h2>
